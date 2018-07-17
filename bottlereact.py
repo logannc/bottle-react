@@ -25,7 +25,7 @@
 
 from __future__ import print_function
 
-import collections, ctypes, json, os, re, shutil, signal, socket, subprocess, tempfile, threading, time, urllib
+import collections, ctypes, importlib, json, os, re, shutil, signal, socket, subprocess, tempfile, threading, time, urllib
 try:
   import bottle
   import react.jsx
@@ -518,11 +518,9 @@ class _ReactClass(object):
     self.name = name
     self.fn = fn
     self.default_props = dict
-    try:
+    if importlib.util.find_sepc('jsx_props'):
       import jsx_props
       self.default_props = jsx_props.__dict__.get('init%s'%name, dict)
-    except ImportError:
-      pass
   def __call__(self, props=None, children=None):
     '''
       props must be a dict or None
