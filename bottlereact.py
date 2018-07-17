@@ -25,7 +25,7 @@
 
 from __future__ import print_function
 
-import collections, ctypes, importlib, json, os, re, shutil, signal, socket, subprocess, tempfile, threading, time, urllib
+import collections, ctypes, importlib, json, os, random, re, shutil, signal, socket, subprocess, tempfile, threading, time, urllib
 try:
   import bottle
   import react.jsx
@@ -43,7 +43,7 @@ except ImportError:
   from urllib import urlopen, urlretrieve
 
 
-__version__='16.2.0'
+__version__='16.2.3'
 
 
 FLASK_AROUND = False
@@ -56,10 +56,13 @@ except ImportError:
 
 
 __ALL__ = ['BottleReact','__version__']
-BABEL_CORE = 'https://cdnjs.cloudflare.com/ajax/libs/babel-core/5.8.24/browser.min.js'
+BABEL_CORE = 'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/6.26.0/babel.min.js'
 
+try:
+    libc = ctypes.CDLL("libc.so.6")
+except OSError:
+    libc = ctypes.CDLL("libc.dylib")
 
-libc = ctypes.CDLL("libc.so.6")
 def set_pdeathsig(sig = signal.SIGTERM):
     def callable():
         return libc.prctl(1, sig)
@@ -103,8 +106,7 @@ class BottleReact(object):
           if path=='bottlereact.js':
             return flask.Response(BOTTLEREACT_JS, mimetype='text/javascript')
           elif path.endswith('.jsx'):
-            response = flask.make_response(flask.send_from_directory(self.jsx_path, path))
-            response.headers['Content-Type'] = 'text/babel'
+            response = flask.make_response(flask.send_from_directory(self.jsx_path, path, mimetype='text/babel'))
             return response
           else:
             return flask.send_from_directory(self.asset_path, path)
@@ -122,8 +124,7 @@ class BottleReact(object):
             bottle.response.set_header('Content-Type', 'text/javascript')
             return BOTTLEREACT_JS
           elif path.endswith('.jsx'):
-            bottle.response.set_header('Content-Type', 'text/babel')
-            return bottle.static_file(path, root=self.jsx_path)
+            return bottle.static_file(path, root=self.jsx_path, mimetype='text/babel')
           else:
             return bottle.static_file(path, root=self.asset_path)
 
@@ -299,7 +300,7 @@ class BottleReact(object):
           dep = _make_string_fn_safe(dep)
         if dep=='bottlereact.js':
           of.write(BOTTLEREACT_JS)
-        elif dep.endswith('_browser.js') or dep.endswith('_browser.min.js'):
+        elif dep.endswith('_babel.js') or dep.endswith('_babel.min.js'):
           pass
         elif dep.endswith('.js'):
           if self.prod:
@@ -420,8 +421,10 @@ class BottleReact(object):
       else: # assume javascript
         deps_html.append('<script src="%s"></script>' % bottle.html_escape(path))
     deps_html = '\n'.join(deps_html)
+    init_nonce = kwargs.get('init_nonce', None)
+    init_nonce = ' nonce="%s"' % init_nonce if init_nonce else ''
     init = '''
-    <script>
+    <script%s>
       bottlereact._onLoad(%s, function() {
         ReactDOM.render(
           %s,
@@ -429,7 +432,7 @@ class BottleReact(object):
         );
       });
     </script>
-    ''' % (classes, react_js)
+    ''' % (init_nonce, classes, react_js)
     if 'title' not in kwargs: kwargs['title'] = 'bottle-react - https://github.com/keredson/bottle-react'
     kwargs.update({
       'deps': deps_html,
@@ -469,6 +472,8 @@ class _ReactNode(object):
     self.react_class = react_class
     self.props = self.react_class.default_props()
     if props: self.props.update(props)
+    if 'key' not in self.props:
+      self.props['key'] = '_br_%f' % random.random()
     self.children = children if children else []
 
   def get_js_files(self, files=None):
